@@ -7,6 +7,7 @@
 #include "ygz/MapPoint.h"
 #include "ygz/Viewer.h"
 
+#include <ctime>
 #include <opencv2/imgproc/imgproc.hpp>
 #include <opencv2/highgui/highgui.hpp>
 
@@ -259,7 +260,22 @@ namespace ygz {
         }
 
         // 注意 LK 只管追踪2D点，而不管这些2D点是否关联了3D地图点
-        int cntMatches = LKFlowCV(mpLastFrame, mpCurrentFrame, refPts, trackedPts);
+        int cntMatches = 0;
+
+        clock_t begin = clock();
+        cntMatches = LKFlowCVCuda(mpLastFrame, mpCurrentFrame, refPts, trackedPts);
+        clock_t end = clock();
+        double elapsed_secs = double(end - begin) / CLOCKS_PER_SEC;
+        LOG(INFO) << "Elasped time CUDA is " <<  elapsed_secs << endl;
+        //printf ("Elasped time CUDA is %.5f seconds.\n", elapsed_secs );
+
+
+        // begin = clock();        
+        // cntMatches = LKFlowCV(mpLastFrame, mpCurrentFrame, refPts, trackedPts);
+        // end = clock();
+        // elapsed_secs = double(end - begin) / CLOCKS_PER_SEC;
+        // printf ("Elasped time CV is %.5f seconds.\n", elapsed_secs );
+
         // int cntMatches = LKFlow(mpLastFrame, mpCurrentFrame, trackedPts);
 
         int validMatches = 0;

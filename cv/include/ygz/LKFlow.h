@@ -57,6 +57,17 @@ namespace ygz {
     );
 
     /**
+     * OpenCV's cuda lk flow
+     *
+     */
+    int LKFlowCVCuda(
+            const shared_ptr<Frame> ref,
+            const shared_ptr<Frame> current,
+            VecVector2f &refPts,
+            VecVector2f &trackedPts
+    );
+
+    /**
      * 双线性插值
      * @param x
      * @param y

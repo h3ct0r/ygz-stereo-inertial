@@ -6,6 +6,10 @@
 #include <opencv2/video/video.hpp>
 #include <opencv2/calib3d/calib3d.hpp>
 
+
+#include <opencv2/cudaoptflow.hpp>
+#include <opencv2/cudaimgproc.hpp>
+
 namespace ygz {
 
     int LKFlow(
@@ -302,6 +306,95 @@ namespace ygz {
             }
         }
 
+        return successPts;
+    }
+
+    static void upload(const vector<cv::Point2f>& vec, cv::cuda::GpuMat& d_mat)
+    {
+        cv::Mat mat(1, vec.size(), CV_32FC2, (void*)&vec[0]);
+        d_mat.upload(mat);
+    }
+
+    static void download(const cv::cuda::GpuMat& d_mat, vector<cv::Point2f>& vec)
+    {
+        vec.resize(d_mat.cols);
+        cv::Mat mat(1, d_mat.cols, CV_32FC2, (void*)&vec[0]);
+        d_mat.download(mat);
+    }
+    static void download(const cv::cuda::GpuMat& d_mat, vector<uchar>& vec)
+    {
+        vec.resize(d_mat.cols);
+        cv::Mat mat(1, d_mat.cols, CV_8UC1, (void*)&vec[0]);
+        d_mat.download(mat);
+    }
+
+
+
+    int LKFlowCVCuda(
+            const shared_ptr<Frame> ref,
+            const shared_ptr<Frame> current,
+            VecVector2f &refPts,
+            VecVector2f &trackedPts
+    ) {
+        if (refPts.size() == 0)
+            return 0;
+
+        vector<cv::Point2f> refPx, currPts;
+        for (auto &px:refPts) {
+            refPx.push_back(cv::Point2f(px[0], px[1]));
+        }
+        for (Vector2f &v: trackedPts) {
+            currPts.push_back(cv::Point2f(v[0], v[1]));
+        }
+
+        vector<uchar> status;
+        vector<float> err;
+
+        // cv::calcOpticalFlowPyrLK(ref->mImLeft, current->mImLeft, refPx, currPts, status, err,
+        //                          cv::Size(21, 21), 3,
+        //                          cv::TermCriteria(cv::TermCriteria::COUNT + cv::TermCriteria::EPS, 30, 0.01),
+        //                          cv::OPTFLOW_USE_INITIAL_FLOW);
+
+        // Sparse
+        cv::Ptr<cv::cuda::SparsePyrLKOpticalFlow> d_pyrLK_sparse = cv::cuda::SparsePyrLKOpticalFlow::create(cv::Size(21, 21), 3, 30);
+
+        cv::cuda::GpuMat d_frame0Gray(ref->mImLeft);
+        cv::cuda::GpuMat d_frame1Gray(current->mImLeft);
+
+        cv::cuda::GpuMat d_refPx;
+        upload(refPx, d_refPx);
+
+        cv::cuda::GpuMat d_currPts;
+        upload(currPts, d_currPts);
+
+        cv::cuda::GpuMat d_status;
+
+        d_pyrLK_sparse->calc(d_frame0Gray, d_frame1Gray, d_refPx, d_currPts, d_status);
+
+        download(d_refPx, refPx);
+        download(d_currPts, currPts);
+
+        download(d_status, status);
+
+
+        // reject with F matrix
+        cv::findFundamentalMat(refPx, currPts, cv::FM_RANSAC, 3.0, 0.99, status);
+
+        int successPts = 0;
+        for (int i = 0; i < currPts.size(); i++) {
+            if (status[i] && (currPts[i].x > setting::boarder && currPts[i].y > setting::boarder &&
+                              currPts[i].x < setting::imageWidth - setting::boarder &&
+                              currPts[i].y < setting::imageHeight - setting::boarder)) {
+                // succeed
+                // trackedPts.push_back(Vector2f(currPts[i].x, currPts[i].y));
+                trackedPts[i] = Vector2f(currPts[i].x, currPts[i].y);
+                successPts++;
+            } else {
+                // failed
+                // trackedPts.push_back(Vector2f(-1, -1));
+                trackedPts[i] = Vector2f(-1, -1);
+            }
+        }
         return successPts;
     }
 
